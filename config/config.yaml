@@ -4,12 +4,19 @@
 # Broker Configuration
 broker:
   name: "IC_Markets"  # Change to your broker
-  api_type: "MT5"     # MT5, MT4, cTrader, IB
+  api_type: "MT5"     # MT5, MT4, cTrader, IB, Oanda, FXCM
   server: "ICMarkets-Demo"
   login: "your_login_here"
   password: "your_password_here"
   timeout: 30
   retries: 3
+  
+  # Order Execution Settings
+  default_fill_mode: "IOC"        # IOC, FOK, MARKET, INSTANT, GTC, DAY
+  max_deviation: 10               # Maximum price deviation (points)
+  execution_timeout: 5.0          # Order execution timeout (seconds)
+  retry_attempts: 3               # Number of retry attempts
+  retry_delay: 0.1                # Delay between retries (seconds)
 
 # Trading Configuration
 trading:
@@ -19,9 +26,85 @@ trading:
   min_liquidity: 1.0           # Minimum lot size available
   
   # Position Management
-  base_lot_size: 0.01          # Base position size
+  base_lot_size: 0.01          # Base position size (legacy)
   max_position_risk: 2.0       # Max risk per trade (%)
   max_total_exposure: 20.0     # Max total exposure (%)
+  
+  # Position Sizing Method
+  position_sizing:
+    method: "balanced_exposure"     # balanced_exposure, fixed_lot, risk_based
+    target_exposure_per_leg: 10000  # USD per triangle leg
+    balance_tolerance: 0.05         # 5% deviation allowed
+    auto_adjust_exposure: true      # Adjust based on account balance
+    
+  # Contract Sizes (USD value per 1.00 lot)
+  contract_sizes:
+    # Major USD pairs
+    EURUSD: 100000
+    GBPUSD: 100000
+    AUDUSD: 100000
+    NZDUSD: 100000
+    USDCAD: 100000
+    USDCHF: 100000
+    USDJPY: 100000
+    USDSGD: 100000
+    USDHKD: 100000
+    USDNOK: 100000
+    USDSEK: 100000
+    USDDKK: 100000
+    USDPLN: 100000
+    USDZAR: 100000
+    USDMXN: 100000
+    
+    # EUR cross pairs
+    EURJPY: 100000
+    EURGBP: 100000
+    EURAUD: 100000
+    EURNZD: 100000
+    EURCAD: 100000
+    EURCHF: 100000
+    EURSGD: 100000
+    EURNOK: 100000
+    EURSEK: 100000
+    EURDKK: 100000
+    EURPLN: 100000
+    EURZAR: 100000
+    
+    # GBP cross pairs
+    GBPJPY: 100000
+    GBPAUD: 100000
+    GBPNZD: 100000
+    GBPCAD: 100000
+    GBPCHF: 100000
+    GBPSGD: 100000
+    GBPNOK: 100000
+    GBPSEK: 100000
+    GBPDKK: 100000
+    GBPPLN: 100000
+    GBPZAR: 100000
+    
+    # Other major cross pairs
+    AUDJPY: 100000
+    AUDCAD: 100000
+    AUDCHF: 100000
+    AUDNZD: 100000
+    AUDSGD: 100000
+    NZDJPY: 100000
+    NZDCAD: 100000
+    NZDCHF: 100000
+    NZDSGD: 100000
+    CADJPY: 100000
+    CADCHF: 100000
+    CADSGD: 100000
+    CHFJPY: 100000
+    CHFSGD: 100000
+    SGDJPY: 100000
+    
+  # Lot Constraints (from broker)
+  lot_constraints:
+    min_lot: 0.01           # Minimum lot size
+    max_lot: 100.0          # Maximum lot size  
+    lot_step: 0.01          # Lot step increment
   
   # Entry Filters
   max_volatility: 80           # Max market volatility (0-100)
@@ -119,6 +202,15 @@ risk_management:
   # Emergency Protocols
   max_daily_loss: 10.0         # Max daily loss (%)
   max_drawdown: 20.0           # Max total drawdown (%)
+  
+  # Triangle Balance Controls
+  max_exposure_per_triangle: 30000  # Max $30K total per triangle
+  max_imbalance_ratio: 1.5          # Max 1.5:1 ratio between legs
+  rebalance_threshold: 0.10         # Rebalance if >10% imbalanced
+  
+  # Position Size Limits
+  max_lot_per_pair: 10.0            # Max lot size per currency pair
+  max_total_lots: 50.0              # Max total lots across all positions
   
   # Circuit Breakers
   volatility_circuit: 95       # Stop trading at extreme volatility

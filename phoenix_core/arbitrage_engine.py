@@ -13,6 +13,24 @@ from datetime import datetime
 import numpy as np
 from enum import Enum
 
+# Import order executor and balanced lot calculator
+try:
+    from phoenix_brokers.order_executor import BrokerOrderExecutor, OrderRequest, OrderType, FillMode
+except ImportError:
+    # Fallback if order_executor not available
+    BrokerOrderExecutor = None
+    OrderRequest = None
+    OrderType = None
+    FillMode = None
+
+try:
+    from phoenix_core.balanced_lot_calculator import BalancedLotCalculator, BalanceMethod, DEFAULT_CONTRACT_SIZES
+except ImportError:
+    # Fallback if balanced_lot_calculator not available
+    BalancedLotCalculator = None
+    BalanceMethod = None
+    DEFAULT_CONTRACT_SIZES = None
+
 class EngineStatus(Enum):
     """Engine status states"""
     STOPPED = "stopped"
@@ -88,6 +106,29 @@ class ArbitrageEngine:
         
         # Magic number for position identification
         self.magic_number = 20241201
+        
+        # Order executor
+        self.order_executor = None
+        if BrokerOrderExecutor:
+            try:
+                broker_type = pair_scanner.broker_type.value if hasattr(pair_scanner, 'broker_type') else 'MT5'
+                self.order_executor = BrokerOrderExecutor(broker_type, pair_scanner.broker_config)
+                self.logger.info(f"🎯 Order Executor initialized for {broker_type}")
+            except Exception as e:
+                self.logger.warning(f"⚠️ Could not initialize Order Executor: {e}")
+        
+        # Balanced lot calculator
+        self.lot_calculator = None
+        if BalancedLotCalculator and DEFAULT_CONTRACT_SIZES:
+            try:
+                # Initialize with default contract sizes
+                self.lot_calculator = BalancedLotCalculator(
+                    contract_sizes=config.get('contract_sizes', DEFAULT_CONTRACT_SIZES),
+                    exchange_rates={}  # Will be updated with real-time rates
+                )
+                self.logger.info("📊 Balanced Lot Calculator initialized")
+            except Exception as e:
+                self.logger.warning(f"⚠️ Could not initialize Balanced Lot Calculator: {e}")
         
         self.logger.info("🔥 Arbitrage Engine initialized")
     
@@ -362,14 +403,14 @@ class ArbitrageEngine:
         try:
             self.logger.info(f"🎯 Executing triangle: {opportunity.pair1}-{opportunity.pair2}-{opportunity.pair3}")
             
-            # Calculate position sizes
-            lot_size = self._calculate_position_size(opportunity)
+            # Calculate position sizes (now returns dict of pair -> lot_size)
+            lot_sizes = self._calculate_position_size(opportunity)
             
             # Execute trades in sequence
             if opportunity.direction == 'forward':
-                success = await self._execute_forward_triangle(opportunity, lot_size)
+                success = await self._execute_forward_triangle(opportunity, lot_sizes)
             else:
-                success = await self._execute_reverse_triangle(opportunity, lot_size)
+                success = await self._execute_reverse_triangle(opportunity, lot_sizes)
             
             if success:
                 self.executed_triangles += 1
@@ -381,37 +422,189 @@ class ArbitrageEngine:
             self.logger.error(f"❌ Triangle execution failed: {e}")
             return False
     
-    def _calculate_position_size(self, opportunity: TriangleOpportunity) -> float:
-        """Calculate appropriate position size based on risk management"""
-        # Simplified position sizing - in reality, you'd consider:
-        # - Account balance
-        # - Risk per trade
-        # - Correlation with existing positions
-        # - Market volatility
+    def _calculate_position_size(self, opportunity: TriangleOpportunity) -> Dict[str, float]:
+        """Calculate appropriate position sizes based on balanced exposure"""
         
-        return self.base_lot_size
+        # Try balanced lot calculation first
+        if self.lot_calculator:
+            try:
+                # Update calculator with current exchange rates
+                current_rates = self._get_current_exchange_rates()
+                if current_rates:
+                    self.lot_calculator.update_rates(current_rates)
+                
+                # Get position sizing config
+                position_config = self.config.get('position_sizing', {})
+                target_exposure = position_config.get('target_exposure_per_leg', 10000)
+                lot_constraints = self.config.get('lot_constraints', {})
+                
+                # Calculate balanced lots for triangle
+                triangle_pairs = [opportunity.pair1, opportunity.pair2, opportunity.pair3]
+                balanced_lots = self.lot_calculator.calculate_triangle_lots(
+                    triangle_pairs=triangle_pairs,
+                    target_exposure_per_leg=target_exposure,
+                    lot_step=lot_constraints.get('lot_step', 0.01),
+                    min_lot=lot_constraints.get('min_lot', 0.01),
+                    max_lot=lot_constraints.get('max_lot', 100.0),
+                    method=BalanceMethod.EQUAL_EXPOSURE
+                )
+                
+                # Validate triangle balance
+                is_balanced, message = self.lot_calculator.validate_triangle_balance(
+                    balanced_lots, 
+                    tolerance=position_config.get('balance_tolerance', 0.05)
+                )
+                
+                if not is_balanced:
+                    self.logger.warning(f"⚠️ Triangle imbalance: {message}")
+                
+                # Get exposure summary
+                summary = self.lot_calculator.get_triangle_exposure_summary(balanced_lots)
+                self.logger.info(
+                    f"📊 Balanced lots: Total=${summary['total_exposure']:,.0f}, "
+                    f"Balance={summary['balance_score']:.1f}%"
+                )
+                
+                return balanced_lots
+                
+            except Exception as e:
+                self.logger.error(f"❌ Balanced lot calculation failed: {e}")
+        
+        # Fallback to simple equal lot sizing
+        self.logger.info("📊 Using fallback equal lot sizing")
+        return {
+            opportunity.pair1: self.base_lot_size,
+            opportunity.pair2: self.base_lot_size,
+            opportunity.pair3: self.base_lot_size
+        }
     
-    async def _execute_forward_triangle(self, opportunity: TriangleOpportunity, lot_size: float) -> bool:
+    def _get_current_exchange_rates(self) -> Optional[Dict[str, float]]:
+        """Get current exchange rates for lot calculation"""
+        try:
+            if not hasattr(self.pair_scanner, 'mt5'):
+                return None
+            
+            mt5 = self.pair_scanner.mt5
+            rates = {}
+            
+            # Get rates for major pairs used in calculations
+            major_pairs = ['EURUSD', 'GBPUSD', 'USDJPY', 'USDCHF', 'USDCAD', 'AUDUSD', 'NZDUSD']
+            
+            for pair in major_pairs:
+                try:
+                    symbol = self._get_broker_symbol(pair)
+                    if symbol:
+                        tick = mt5.symbol_info_tick(symbol)
+                        if tick:
+                            rates[pair] = (tick.bid + tick.ask) / 2
+                except Exception:
+                    continue
+            
+            return rates if rates else None
+            
+        except Exception as e:
+            self.logger.error(f"❌ Failed to get exchange rates: {e}")
+            return None
+    
+    async def _execute_forward_triangle(self, opportunity: TriangleOpportunity, lot_sizes: Dict[str, float]) -> bool:
         """Execute forward triangle (buy-buy-sell sequence)"""
-        # This is a placeholder - actual implementation would:
-        # 1. Place market orders for each leg
-        # 2. Handle partial fills
-        # 3. Manage execution timing
-        # 4. Handle errors and rollbacks
+        if not self.order_executor or not OrderRequest:
+            # Fallback to old method
+            total_lots = sum(lot_sizes.values())
+            self.logger.info(f"📈 Forward triangle execution (legacy): {total_lots:.3f} total lots")
+            return True
         
-        self.logger.info(f"📈 Forward triangle execution: {lot_size} lots")
-        return True  # Placeholder
+        try:
+            # Set connection reference
+            if hasattr(self.pair_scanner, 'mt5'):
+                self.order_executor.set_connection(self.pair_scanner.mt5)
+            
+            # Execute triangle with IOC fill mode for speed
+            fill_mode = FillMode.IOC if FillMode else None
+            
+            # Extract lot sizes in order
+            volumes = [
+                lot_sizes.get(opportunity.pair1, 0.01),
+                lot_sizes.get(opportunity.pair2, 0.01),
+                lot_sizes.get(opportunity.pair3, 0.01)
+            ]
+            
+            results = await self.order_executor.execute_triangle_arbitrage(
+                pair1=opportunity.pair1,
+                pair2=opportunity.pair2, 
+                pair3=opportunity.pair3,
+                volumes=volumes,
+                directions=['buy', 'buy', 'sell'],
+                fill_mode=fill_mode
+            )
+            
+            # Check if all orders succeeded
+            successful_orders = sum(1 for r in results if r.success)
+            success_rate = successful_orders / len(results) if results else 0
+            
+            # Log detailed results
+            for i, (pair, volume) in enumerate(zip([opportunity.pair1, opportunity.pair2, opportunity.pair3], volumes)):
+                if i < len(results):
+                    status = "✅" if results[i].success else "❌"
+                    self.logger.info(f"  {status} {pair}: {volume:.3f} lot")
+            
+            self.logger.info(f"📈 Forward triangle: {successful_orders}/3 orders successful ({success_rate:.1%})")
+            
+            return success_rate >= 0.67  # At least 2/3 orders must succeed
+            
+        except Exception as e:
+            self.logger.error(f"❌ Forward triangle execution failed: {e}")
+            return False
     
-    async def _execute_reverse_triangle(self, opportunity: TriangleOpportunity, lot_size: float) -> bool:
+    async def _execute_reverse_triangle(self, opportunity: TriangleOpportunity, lot_sizes: Dict[str, float]) -> bool:
         """Execute reverse triangle (sell-sell-buy sequence)"""
-        # This is a placeholder - actual implementation would:
-        # 1. Place market orders for each leg
-        # 2. Handle partial fills
-        # 3. Manage execution timing
-        # 4. Handle errors and rollbacks
+        if not self.order_executor or not OrderRequest:
+            # Fallback to old method
+            total_lots = sum(lot_sizes.values())
+            self.logger.info(f"📉 Reverse triangle execution (legacy): {total_lots:.3f} total lots")
+            return True
         
-        self.logger.info(f"📉 Reverse triangle execution: {lot_size} lots")
-        return True  # Placeholder
+        try:
+            # Set connection reference
+            if hasattr(self.pair_scanner, 'mt5'):
+                self.order_executor.set_connection(self.pair_scanner.mt5)
+            
+            # Execute triangle with IOC fill mode for speed
+            fill_mode = FillMode.IOC if FillMode else None
+            
+            # Extract lot sizes in order
+            volumes = [
+                lot_sizes.get(opportunity.pair1, 0.01),
+                lot_sizes.get(opportunity.pair2, 0.01),
+                lot_sizes.get(opportunity.pair3, 0.01)
+            ]
+            
+            results = await self.order_executor.execute_triangle_arbitrage(
+                pair1=opportunity.pair1,
+                pair2=opportunity.pair2,
+                pair3=opportunity.pair3,
+                volumes=volumes,
+                directions=['sell', 'sell', 'buy'],
+                fill_mode=fill_mode
+            )
+            
+            # Check if all orders succeeded
+            successful_orders = sum(1 for r in results if r.success)
+            success_rate = successful_orders / len(results) if results else 0
+            
+            # Log detailed results
+            for i, (pair, volume) in enumerate(zip([opportunity.pair1, opportunity.pair2, opportunity.pair3], volumes)):
+                if i < len(results):
+                    status = "✅" if results[i].success else "❌"
+                    self.logger.info(f"  {status} {pair}: {volume:.3f} lot")
+            
+            self.logger.info(f"📉 Reverse triangle: {successful_orders}/3 orders successful ({success_rate:.1%})")
+            
+            return success_rate >= 0.67  # At least 2/3 orders must succeed
+            
+        except Exception as e:
+            self.logger.error(f"❌ Reverse triangle execution failed: {e}")
+            return False
     
     async def _monitor_positions(self):
         """Monitor existing positions and manage them"""
@@ -536,3 +729,27 @@ class ArbitrageEngine:
     def get_positions(self) -> List[Position]:
         """Get active positions"""
         return self.active_positions.copy()
+    
+    def get_order_executor_info(self) -> Dict:
+        """Get order executor information"""
+        if not self.order_executor:
+            return {
+                'available': False,
+                'broker_type': 'Unknown',
+                'supported_fill_modes': [],
+                'capabilities': {}
+            }
+        
+        try:
+            return {
+                'available': True,
+                'broker_type': self.order_executor.broker_type,
+                'supported_fill_modes': [mode.value for mode in self.order_executor.get_supported_fill_modes()],
+                'capabilities': self.order_executor.get_broker_capabilities()
+            }
+        except Exception as e:
+            return {
+                'available': False,
+                'error': str(e),
+                'broker_type': getattr(self.order_executor, 'broker_type', 'Unknown')
+            }
