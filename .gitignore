@@ -1,0 +1,131 @@
+# 🔥 ARBI PHOENIX - Git Ignore File
+# "What the Phoenix doesn't need to track"
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual Environment
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+.venv/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Trading Data & Logs
+data/logs/
+data/backups/
+data/cache/
+*.log
+*.db
+*.sqlite
+*.sqlite3
+
+# Configuration (Sensitive)
+config/secrets.yaml
+config/production.yaml
+config/live_trading.yaml
+.env
+.env.local
+.env.production
+
+# Trading History & Reports
+reports/
+backtest_results/
+trade_history/
+performance_reports/
+
+# Temporary Files
+temp/
+tmp/
+*.tmp
+*.temp
+
+# Jupyter Notebooks
+.ipynb_checkpoints/
+*.ipynb
+
+# Model Files (Large)
+*.pkl
+*.joblib
+*.h5
+*.pb
+models/
+
+# Data Files (Large)
+*.csv
+*.xlsx
+*.json
+data/market_data/
+data/historical/
+
+# Broker Specific
+mt5_data/
+ib_data/
+oanda_data/
+
+# Compiled Extensions
+*.pyd
+*.dll
+
+# Coverage Reports
+htmlcov/
+.tox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+
+# Sphinx Documentation
+docs/_build/
+
+# PyBuilder
+target/
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json

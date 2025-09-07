@@ -1,0 +1,170 @@
+# 🔥 ARBI PHOENIX - Configuration File
+# "The Phoenix configuration that never burns"
+
+# Broker Configuration
+broker:
+  name: "IC_Markets"  # Change to your broker
+  api_type: "MT5"     # MT5, MT4, cTrader, IB
+  server: "ICMarkets-Demo"
+  login: "your_login_here"
+  password: "your_password_here"
+  timeout: 30
+  retries: 3
+
+# Trading Configuration
+trading:
+  # Arbitrage Settings
+  min_arbitrage_profit: 5      # Minimum profit in pips
+  max_spread_cost: 8           # Maximum total spread cost
+  min_liquidity: 1.0           # Minimum lot size available
+  
+  # Position Management
+  base_lot_size: 0.01          # Base position size
+  max_position_risk: 2.0       # Max risk per trade (%)
+  max_total_exposure: 20.0     # Max total exposure (%)
+  
+  # Entry Filters
+  max_volatility: 80           # Max market volatility (0-100)
+  min_correlation: 0.5         # Min correlation for recovery
+  news_filter_minutes: 30      # Avoid trading X minutes around news
+  
+  # Profit Targets
+  profit_levels:
+    quick_scalp: 8             # First profit level (pips)
+    partial_1: 15              # Second profit level (pips)
+    partial_2: 25              # Third profit level (pips)
+    final_target: 40           # Final profit target (pips)
+  
+  # Profit Taking Percentages
+  profit_percentages:
+    quick_scalp: 25            # % to close at first level
+    partial_1: 25              # % to close at second level
+    partial_2: 30              # % to close at third level
+    final_target: 20           # % remaining at final level
+
+# Recovery System Configuration
+recovery:
+  # Recovery Layers
+  max_recovery_layers: 6       # Maximum recovery depth
+  recovery_multiplier: 1.5     # Lot size multiplier for recovery
+  
+  # Correlation Thresholds
+  strong_correlation: 0.8      # Strong correlation threshold
+  medium_correlation: 0.6      # Medium correlation threshold
+  weak_correlation: 0.4        # Weak correlation threshold
+  
+  # Recovery Timing
+  recovery_delay: 30           # Seconds before activating recovery
+  max_recovery_time: 14400     # Max recovery time (4 hours)
+  
+  # Recovery Filters
+  max_drawdown_trigger: 15.0   # Activate recovery at X% drawdown
+  correlation_stability: 0.3   # Min correlation stability required
+
+# GUI Configuration
+gui:
+  # Window Settings
+  window_title: "🔥 Arbi Phoenix Dashboard"
+  window_width: 1400
+  window_height: 900
+  
+  # Update Frequencies (milliseconds)
+  portfolio_update: 1000       # Portfolio status update
+  triangle_update: 500         # Triangle status update
+  recovery_update: 2000        # Recovery status update
+  chart_update: 5000           # Chart update frequency
+  
+  # Display Settings
+  max_activity_lines: 100      # Max lines in activity feed
+  decimal_places: 2            # Decimal places for display
+  
+  # Colors (hex codes)
+  colors:
+    profit: "#00FF00"          # Green for profits
+    loss: "#FF0000"            # Red for losses
+    neutral: "#FFFF00"         # Yellow for neutral
+    background: "#1E1E1E"      # Dark background
+    text: "#FFFFFF"            # White text
+
+# Logging Configuration
+logging:
+  level: "INFO"                # DEBUG, INFO, WARNING, ERROR
+  file_path: "data/logs/phoenix.log"
+  max_file_size: "10MB"
+  backup_count: 5
+  
+  # Log Categories
+  categories:
+    arbitrage: true            # Log arbitrage activities
+    recovery: true             # Log recovery activities
+    profit: true               # Log profit activities
+    errors: true               # Log errors
+    debug: false               # Log debug information
+
+# Database Configuration
+database:
+  type: "sqlite"               # sqlite, postgresql
+  path: "data/phoenix.db"
+  
+  # Tables to maintain
+  tables:
+    trades: true               # Trade history
+    triangles: true            # Triangle performance
+    recovery: true             # Recovery statistics
+    correlations: true         # Correlation history
+    performance: true          # Performance metrics
+
+# Risk Management
+risk_management:
+  # Emergency Protocols
+  max_daily_loss: 10.0         # Max daily loss (%)
+  max_drawdown: 20.0           # Max total drawdown (%)
+  
+  # Circuit Breakers
+  volatility_circuit: 95       # Stop trading at extreme volatility
+  correlation_circuit: 0.2     # Stop when correlations break down
+  
+  # Position Limits
+  max_positions_per_pair: 3    # Max positions per currency pair
+  max_total_positions: 50      # Max total open positions
+  
+  # Time Limits
+  max_position_duration: 86400 # Max position duration (24 hours)
+  trading_hours:
+    start: "00:00"             # Trading start time (UTC)
+    end: "23:59"               # Trading end time (UTC)
+    
+# Performance Monitoring
+monitoring:
+  # Metrics Collection
+  collect_metrics: true
+  metrics_interval: 60         # Seconds between metric collection
+  
+  # Performance Targets
+  targets:
+    daily_return: 5.0          # Target daily return (%)
+    weekly_return: 25.0        # Target weekly return (%)
+    monthly_return: 100.0      # Target monthly return (%)
+    
+  # Alerts
+  alerts:
+    email_enabled: false       # Enable email alerts
+    sms_enabled: false         # Enable SMS alerts
+    desktop_enabled: true      # Enable desktop notifications
+    
+# Advanced Features
+advanced:
+  # Machine Learning
+  ml_enabled: false            # Enable ML predictions
+  ml_model_path: "data/models/phoenix_ml.pkl"
+  
+  # Multi-threading
+  max_threads: 8               # Max concurrent threads
+  
+  # Caching
+  cache_enabled: true          # Enable data caching
+  cache_size: 1000             # Max cache entries
+  
+  # Optimization
+  optimize_enabled: true       # Enable parameter optimization
+  optimization_interval: 3600  # Optimization interval (1 hour)
