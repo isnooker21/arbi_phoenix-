@@ -14,8 +14,8 @@ import re
 
 class BrokerType(Enum):
     """Supported broker types"""
-    MT5 = "MetaTrader5"
-    MT4 = "MetaTrader4"
+    MT5 = "MT5"
+    MT4 = "MT4"
     CTRADER = "cTrader"
     IB = "InteractiveBrokers"
     OANDA = "Oanda"
@@ -51,13 +51,33 @@ class BrokerPairScanner:
         """Initialize the pair scanner"""
         self.logger = logging.getLogger("PairScanner")
         self.broker_config = broker_config
-        self.broker_type = BrokerType(broker_config.get('api_type', 'MT5'))
+        api_type = broker_config.get('api_type', 'MT5')
+        # Handle string to enum conversion
+        if isinstance(api_type, str):
+            for broker_type in BrokerType:
+                if broker_type.value == api_type:
+                    self.broker_type = broker_type
+                    break
+            else:
+                # Default to MT5 if not found
+                self.broker_type = BrokerType.MT5
+        else:
+            self.broker_type = api_type
         
         # Available pairs storage
         self.available_pairs: List[CurrencyPair] = []
         self.major_pairs: List[CurrencyPair] = []
         self.minor_pairs: List[CurrencyPair] = []
         self.exotic_pairs: List[CurrencyPair] = []
+        
+        # Connection status
+        self.is_connected = False
+        self.connection_status = "Disconnected"
+        self.last_connection_check = None
+        
+        # Auto-connection settings
+        self.auto_connect = broker_config.get('auto_connect', True)
+        self.reconnect_interval = broker_config.get('reconnect_interval', 60)
         
         # Nomenclature mapping
         self.nomenclature_map = self._load_nomenclature_rules()
@@ -66,6 +86,10 @@ class BrokerPairScanner:
         self.major_currencies = {'USD', 'EUR', 'GBP', 'JPY', 'CHF', 'AUD', 'NZD', 'CAD'}
         
         self.logger.info(f"🔍 Pair Scanner initialized for {self.broker_type.value}")
+        
+        # Start auto-connection if enabled
+        if self.auto_connect:
+            asyncio.create_task(self._auto_connection_monitor())
     
     def _load_nomenclature_rules(self) -> Dict[BrokerType, Dict]:
         """Load broker-specific nomenclature rules"""
@@ -109,21 +133,32 @@ class BrokerPairScanner:
         }
     
     async def initialize(self):
-        """Initialize broker connection and scan pairs"""
-        try:
-            self.logger.info("🚀 Initializing broker connection...")
-            
-            # Initialize broker-specific connection
-            await self._initialize_broker_connection()
-            
-            # Scan available pairs
-            await self.scan_all_pairs()
-            
-            self.logger.info(f"✅ Scanner initialized with {len(self.available_pairs)} pairs")
-            
-        except Exception as e:
-            self.logger.error(f"❌ Scanner initialization failed: {e}")
-            raise
+        """Initialize broker connection and scan pairs with auto-retry"""
+        max_retries = self.broker_config.get('retries', 3)
+        retry_delay = self.broker_config.get('reconnect_interval', 60)
+        
+        for attempt in range(max_retries):
+            try:
+                self.logger.info(f"🚀 Initializing broker connection (attempt {attempt + 1}/{max_retries})...")
+                
+                # Initialize broker-specific connection
+                await self._initialize_broker_connection()
+                
+                # Scan available pairs
+                await self.scan_all_pairs()
+                
+                self.logger.info(f"✅ Scanner initialized with {len(self.available_pairs)} pairs")
+                return
+                
+            except Exception as e:
+                self.logger.error(f"❌ Scanner initialization failed (attempt {attempt + 1}): {e}")
+                
+                if attempt < max_retries - 1:
+                    self.logger.info(f"⏳ Retrying in {retry_delay} seconds...")
+                    await asyncio.sleep(retry_delay)
+                else:
+                    self.logger.error("💥 All connection attempts failed!")
+                    raise
     
     async def _initialize_broker_connection(self):
         """Initialize connection to specific broker"""
@@ -155,6 +190,9 @@ class BrokerPairScanner:
                     raise Exception(f"MT5 login failed: {mt5.last_error()}")
             
             self.mt5 = mt5
+            self.is_connected = True
+            self.connection_status = "Connected"
+            self.last_connection_check = asyncio.get_event_loop().time()
             self.logger.info("✅ MT5 connection established")
             
         except ImportError:
@@ -430,6 +468,76 @@ class BrokerPairScanner:
                 except Exception as e:
                     self.logger.warning(f"⚠️ Failed to refresh spread for {pair.symbol}: {e}")
     
+    async def _auto_connection_monitor(self):
+        """Monitor connection and auto-reconnect if needed"""
+        while True:
+            try:
+                if not self.is_connected:
+                    self.logger.info("🔄 Auto-reconnection attempt...")
+                    await self.initialize()
+                else:
+                    # Check connection health
+                    await self._check_connection_health()
+                
+                await asyncio.sleep(self.reconnect_interval)
+                
+            except Exception as e:
+                self.logger.error(f"❌ Auto-connection monitor error: {e}")
+                await asyncio.sleep(self.reconnect_interval)
+    
+    async def _check_connection_health(self):
+        """Check if connection is still healthy"""
+        try:
+            if self.broker_type == BrokerType.MT5 and hasattr(self, 'mt5'):
+                # Try to get account info to test connection
+                account_info = self.mt5.account_info()
+                if account_info is None:
+                    self.is_connected = False
+                    self.connection_status = "Connection Lost"
+                    self.logger.warning("⚠️ MT5 connection lost - will attempt reconnection")
+                else:
+                    self.is_connected = True
+                    self.connection_status = "Connected"
+                    self.last_connection_check = asyncio.get_event_loop().time()
+            
+        except Exception as e:
+            self.logger.error(f"❌ Connection health check failed: {e}")
+            self.is_connected = False
+            self.connection_status = "Connection Error"
+    
+    def get_connection_status(self) -> Dict:
+        """Get current connection status"""
+        return {
+            'is_connected': self.is_connected,
+            'status': self.connection_status,
+            'broker_type': self.broker_type.value,
+            'last_check': self.last_connection_check,
+            'auto_connect': self.auto_connect
+        }
+    
+    async def manual_connect(self):
+        """Manually trigger connection"""
+        try:
+            self.logger.info("🔗 Manual connection requested...")
+            await self.initialize()
+            return True
+        except Exception as e:
+            self.logger.error(f"❌ Manual connection failed: {e}")
+            return False
+    
+    async def disconnect(self):
+        """Disconnect from broker"""
+        try:
+            if self.broker_type == BrokerType.MT5 and hasattr(self, 'mt5'):
+                self.mt5.shutdown()
+            
+            self.is_connected = False
+            self.connection_status = "Disconnected"
+            self.logger.info("🔌 Broker disconnected")
+            
+        except Exception as e:
+            self.logger.error(f"❌ Disconnect error: {e}")
+    
     def get_statistics(self) -> Dict:
         """Get scanner statistics"""
         return {
@@ -439,5 +547,6 @@ class BrokerPairScanner:
             'exotic_pairs': len(self.exotic_pairs),
             'tradeable_pairs': len(self.get_tradeable_pairs()),
             'average_spread': sum(p.spread for p in self.available_pairs) / len(self.available_pairs) if self.available_pairs else 0,
-            'broker_type': self.broker_type.value
+            'broker_type': self.broker_type.value,
+            'connection_status': self.get_connection_status()
         }

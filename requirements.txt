@@ -16,6 +16,7 @@ ta-lib>=0.4.24
 
 # GUI Framework
 PyQt6>=6.4.0
+qasync>=0.24.0
 matplotlib>=3.5.0
 plotly>=5.10.0
 
