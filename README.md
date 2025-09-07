@@ -69,8 +69,8 @@ arbi_phoenix/
 
 ### Installation
 ```bash
-git clone https://github.com/yourusername/arbi_phoenix.git
-cd arbi_phoenix
+git clone https://github.com/isnooker21/arbi_phoenix-.git
+cd arbi_phoenix-
 pip install -r requirements.txt
 python main.py
 ```
