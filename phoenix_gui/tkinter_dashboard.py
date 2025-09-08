@@ -372,7 +372,7 @@ class PhoenixTkinterDashboard:
                     
                     if self.pair_scanner.is_connected:
                         self.log_message("✅ Broker connected successfully")
-                        self.log_message(f"📊 Connected to {self.pair_scanner.api_type.value}")
+                        self.log_message(f"📊 Connected to {self.pair_scanner.broker_type.value}")
                         
                         # Get available pairs
                         pairs = self.pair_scanner.get_available_pairs()
