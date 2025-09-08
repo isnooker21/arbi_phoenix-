@@ -12,9 +12,24 @@ import logging
 from pathlib import Path
 import signal
 import threading
-from PyQt6.QtWidgets import QApplication
-from PyQt6.QtCore import QTimer
-import qasync
+
+# Try to import GUI components, fall back to console mode if failed
+GUI_AVAILABLE = True
+try:
+    from PyQt6.QtWidgets import QApplication
+    from PyQt6.QtCore import QTimer
+    import qasync
+except ImportError:
+    try:
+        from PyQt5.QtWidgets import QApplication
+        from PyQt5.QtCore import QTimer
+        import qasync
+    except ImportError:
+        GUI_AVAILABLE = False
+        print("⚠️ GUI libraries not available, running in console mode")
+        QApplication = None
+        QTimer = None
+        qasync = None
 
 # Add project root to Python path
 project_root = Path(__file__).parent
@@ -24,7 +39,14 @@ from phoenix_core.arbitrage_engine import ArbitrageEngine
 from phoenix_core.recovery_system import RecoverySystem
 from phoenix_core.profit_harvester import ProfitHarvester
 from phoenix_brokers.pair_scanner import BrokerPairScanner
-from phoenix_gui.dashboard import PhoenixDashboard
+# Try to import GUI dashboard, fall back if not available
+PhoenixDashboard = None
+if GUI_AVAILABLE:
+    try:
+        from phoenix_gui.dashboard import PhoenixDashboard
+    except ImportError:
+        print("⚠️ GUI dashboard not available")
+        GUI_AVAILABLE = False
 from phoenix_utils.logger import setup_logger
 from phoenix_utils.config_manager import ConfigManager
 
@@ -84,12 +106,17 @@ class ArbiPhoenix:
                 config=self.config.profit_config
             )
             
-            # 5. Initialize GUI dashboard
-            self.dashboard = PhoenixDashboard(
-                arbitrage_engine=self.arbitrage_engine,
-                recovery_system=self.recovery_system,
-                profit_harvester=self.profit_harvester
-            )
+            # 5. Initialize GUI dashboard (if available)
+            if GUI_AVAILABLE and PhoenixDashboard:
+                self.dashboard = PhoenixDashboard(
+                    arbitrage_engine=self.arbitrage_engine,
+                    recovery_system=self.recovery_system,
+                    profit_harvester=self.profit_harvester
+                )
+                self.logger.info("📊 GUI Dashboard initialized")
+            else:
+                self.dashboard = None
+                self.logger.info("📊 Running in console mode - no GUI dashboard")
             
             self.is_initialized = True
             self.logger.info("✅ Phoenix initialization complete - Ready to rise!")
@@ -104,18 +131,23 @@ class ArbiPhoenix:
             raise
     
     async def start(self):
-        """Start the Phoenix GUI system"""
+        """Start the Phoenix system (GUI or Console)"""
         if not self.is_initialized:
             await self.initialize()
         
         try:
-            self.logger.info("🔥 Starting Arbi Phoenix GUI - The Phoenix awakens!")
-            
-            # Start GUI dashboard
-            await self.dashboard.start()
+            if GUI_AVAILABLE and self.dashboard:
+                self.logger.info("🔥 Starting Arbi Phoenix GUI - The Phoenix awakens!")
+                # Start GUI dashboard
+                await self.dashboard.start()
+                self.logger.info("✅ Phoenix GUI started successfully")
+            else:
+                self.logger.info("🔥 Starting Arbi Phoenix Console - The Phoenix awakens!")
+                # Start console mode
+                await self.start_console_mode()
+                self.logger.info("✅ Phoenix Console started successfully")
             
             self.is_running = True
-            self.logger.info("✅ Phoenix GUI started successfully")
             
         except KeyboardInterrupt:
             self.logger.info("🛑 Phoenix shutdown requested by user")
@@ -208,6 +240,45 @@ class ArbiPhoenix:
                 'dashboard': self.dashboard is not None
             }
         }
+    
+    async def start_console_mode(self):
+        """Start console mode interface"""
+        print("\n🔥 ARBI PHOENIX - CONSOLE MODE")
+        print("=" * 50)
+        print("GUI not available, running in console mode")
+        print("Use Ctrl+C to exit")
+        
+        # Start trading components automatically in console mode
+        if self.config.is_auto_start_enabled():
+            await self.start_trading()
+        
+        # Keep running until interrupted
+        try:
+            while self.is_running:
+                await asyncio.sleep(10)  # Check every 10 seconds
+                
+                # Show basic status every minute
+                if hasattr(self, '_last_status_time'):
+                    if asyncio.get_event_loop().time() - self._last_status_time > 60:
+                        await self._show_console_status()
+                        self._last_status_time = asyncio.get_event_loop().time()
+                else:
+                    self._last_status_time = asyncio.get_event_loop().time()
+                    
+        except KeyboardInterrupt:
+            print("\n🔥 Console mode interrupted by user")
+            await self.stop()
+    
+    async def _show_console_status(self):
+        """Show basic status in console"""
+        if self.arbitrage_engine:
+            status = self.arbitrage_engine.get_status()
+            print(f"\n📊 Status: {status['status']} | "
+                  f"Opportunities: {status['opportunities_found']} | "
+                  f"Executed: {status['opportunities_executed']} | "
+                  f"Profit: ${status['total_profit']:.2f}")
+        else:
+            print("📊 System initializing...")
 
 def print_phoenix_banner():
     """Print the Phoenix startup banner"""
@@ -243,14 +314,9 @@ class PhoenixApp:
         self.loop = None
     
     async def run(self):
-        """Run the Phoenix application with GUI"""
+        """Run the Phoenix application (GUI or Console)"""
         try:
             print_phoenix_banner()
-            
-            # Create QApplication
-            self.app = QApplication(sys.argv)
-            self.app.setApplicationName("Arbi Phoenix")
-            self.app.setApplicationVersion("1.0")
             
             # Create Phoenix system
             self.phoenix = ArbiPhoenix()
@@ -258,24 +324,38 @@ class PhoenixApp:
             # Initialize Phoenix system
             await self.phoenix.initialize()
             
-            # Connect GUI signals to Phoenix methods
-            if self.phoenix.dashboard:
+            if GUI_AVAILABLE and self.phoenix.dashboard:
+                # GUI Mode
+                # Create QApplication
+                self.app = QApplication(sys.argv)
+                self.app.setApplicationName("Arbi Phoenix")
+                self.app.setApplicationVersion("1.0")
+                
+                # Connect GUI signals to Phoenix methods
                 self.phoenix.dashboard.control_panel.start_trading.connect(
                     lambda: asyncio.create_task(self.phoenix.start_trading())
                 )
                 self.phoenix.dashboard.control_panel.stop_trading.connect(
                     lambda: asyncio.create_task(self.phoenix.stop_trading())
                 )
-            
-            # Start Phoenix GUI
-            await self.phoenix.start()
-            
-            # Setup signal handlers
-            signal.signal(signal.SIGINT, self._signal_handler)
-            signal.signal(signal.SIGTERM, self._signal_handler)
-            
-            # Run Qt event loop with asyncio
-            await self._run_qt_loop()
+                
+                # Start Phoenix GUI
+                await self.phoenix.start()
+                
+                # Setup signal handlers
+                signal.signal(signal.SIGINT, self._signal_handler)
+                signal.signal(signal.SIGTERM, self._signal_handler)
+                
+                # Run Qt event loop with asyncio
+                await self._run_qt_loop()
+            else:
+                # Console Mode
+                # Setup signal handlers
+                signal.signal(signal.SIGINT, self._signal_handler)
+                signal.signal(signal.SIGTERM, self._signal_handler)
+                
+                # Start Phoenix Console
+                await self.phoenix.start()
             
         except KeyboardInterrupt:
             print("\n🔥 Phoenix rising again soon...")
@@ -313,20 +393,23 @@ async def main():
 
 def main_sync():
     """Synchronous main entry point"""
-    try:
-        # Use qasync for better Qt/asyncio integration
-        import qasync
-        
-        app = QApplication(sys.argv)
-        loop = qasync.QEventLoop(app)
-        asyncio.set_event_loop(loop)
-        
-        with loop:
-            loop.run_until_complete(main())
+    if GUI_AVAILABLE and qasync:
+        try:
+            # Use qasync for better Qt/asyncio integration
+            app = QApplication(sys.argv)
+            loop = qasync.QEventLoop(app)
+            asyncio.set_event_loop(loop)
             
-    except ImportError:
-        # Fallback to basic asyncio if qasync not available
-        print("⚠️ qasync not available - using basic asyncio")
+            with loop:
+                loop.run_until_complete(main())
+                
+        except Exception as e:
+            print(f"⚠️ GUI mode failed: {e}")
+            print("🔄 Falling back to console mode...")
+            asyncio.run(main())
+    else:
+        # Console mode - basic asyncio
+        print("📟 Running in console mode")
         asyncio.run(main())
 
 if __name__ == "__main__":
