@@ -49,28 +49,32 @@ from phoenix_core.profit_harvester import ProfitHarvester
 from phoenix_brokers.pair_scanner import BrokerPairScanner
 # Try to import GUI dashboard, fall back if not available
 PhoenixDashboard = None
+GUI_TYPE = None
+
 if GUI_AVAILABLE:
+    # Try PyQt first (only if PyQt components are available)
     if QApplication and qasync:
-        # Try PyQt first
         try:
             from phoenix_gui.dashboard import PhoenixDashboard
+            GUI_TYPE = "PyQt"
             print("✅ Using PyQt dashboard")
-        except ImportError:
-            print("⚠️ PyQt GUI dashboard not available, trying tkinter...")
-            try:
-                from phoenix_gui.tkinter_dashboard import PhoenixTkinterDashboard as PhoenixDashboard
-                print("✅ Using tkinter dashboard")
-            except ImportError:
-                print("⚠️ No GUI dashboard available")
-                GUI_AVAILABLE = False
-    else:
-        # Try tkinter
+        except ImportError as e:
+            print(f"⚠️ PyQt GUI dashboard not available: {e}")
+            QApplication = None
+            qasync = None
+    
+    # If PyQt failed or not available, try tkinter
+    if PhoenixDashboard is None:
         try:
             from phoenix_gui.tkinter_dashboard import PhoenixTkinterDashboard as PhoenixDashboard
+            GUI_TYPE = "tkinter"
             print("✅ Using tkinter dashboard")
-        except ImportError:
-            print("⚠️ tkinter GUI dashboard not available")
+        except ImportError as e:
+            print(f"⚠️ tkinter GUI dashboard not available: {e}")
             GUI_AVAILABLE = False
+            GUI_TYPE = None
+
+print(f"🖥️ GUI Status: Available={GUI_AVAILABLE}, Type={GUI_TYPE}")
 from phoenix_utils.logger import setup_logger
 from phoenix_utils.config_manager import ConfigManager
 
@@ -161,10 +165,30 @@ class ArbiPhoenix:
         
         try:
             if GUI_AVAILABLE and self.dashboard:
-                self.logger.info("🔥 Starting Arbi Phoenix GUI - The Phoenix awakens!")
-                # Start GUI dashboard
-                await self.dashboard.start()
-                self.logger.info("✅ Phoenix GUI started successfully")
+                if GUI_TYPE == "PyQt":
+                    self.logger.info("🔥 Starting Arbi Phoenix PyQt GUI - The Phoenix awakens!")
+                    # Start PyQt GUI dashboard
+                    await self.dashboard.start()
+                    self.logger.info("✅ Phoenix PyQt GUI started successfully")
+                elif GUI_TYPE == "tkinter":
+                    self.logger.info("🔥 Starting Arbi Phoenix tkinter GUI - The Phoenix awakens!")
+                    # Start tkinter GUI dashboard in a separate thread
+                    import threading
+                    gui_thread = threading.Thread(target=self.dashboard.run, daemon=True)
+                    gui_thread.start()
+                    self.logger.info("✅ Phoenix tkinter GUI started successfully")
+                    
+                    # Keep main thread alive for async operations
+                    try:
+                        while gui_thread.is_alive():
+                            await asyncio.sleep(0.1)
+                    except KeyboardInterrupt:
+                        self.logger.info("🛑 Shutdown requested")
+                        if hasattr(self.dashboard.root, 'quit'):
+                            self.dashboard.root.quit()
+                else:
+                    self.logger.warning("⚠️ Unknown GUI type, falling back to console")
+                    await self.start_console_mode()
             else:
                 self.logger.info("🔥 Starting Arbi Phoenix Console - The Phoenix awakens!")
                 # Start console mode
@@ -349,8 +373,7 @@ class PhoenixApp:
             await self.phoenix.initialize()
             
             if GUI_AVAILABLE and self.phoenix.dashboard:
-                # Check if it's PyQt or tkinter dashboard
-                if hasattr(self.phoenix.dashboard, 'control_panel'):
+                if GUI_TYPE == "PyQt":
                     # PyQt GUI Mode
                     self.app = QApplication(sys.argv)
                     self.app.setApplicationName("Arbi Phoenix")
@@ -373,7 +396,8 @@ class PhoenixApp:
                     
                     # Run Qt event loop with asyncio
                     await self._run_qt_loop()
-                else:
+                    
+                elif GUI_TYPE == "tkinter":
                     # tkinter GUI Mode
                     print("🖥️ Starting tkinter GUI...")
                     
@@ -381,11 +405,17 @@ class PhoenixApp:
                     signal.signal(signal.SIGINT, self._signal_handler)
                     signal.signal(signal.SIGTERM, self._signal_handler)
                     
-                    # Start Phoenix with tkinter
+                    # Start Phoenix with tkinter (this will call dashboard.run())
                     await self.phoenix.start()
                     
-                    # Run tkinter main loop in thread
-                    await self._run_tkinter_loop()
+                else:
+                    print("⚠️ Unknown GUI type, falling back to console")
+                    # Setup signal handlers
+                    signal.signal(signal.SIGINT, self._signal_handler)
+                    signal.signal(signal.SIGTERM, self._signal_handler)
+                    
+                    # Start Phoenix Console
+                    await self.phoenix.start()
             else:
                 # Console Mode
                 # Setup signal handlers
@@ -452,7 +482,7 @@ async def main():
 def main_sync():
     """Synchronous main entry point"""
     if GUI_AVAILABLE:
-        if qasync and QApplication:
+        if GUI_TYPE == "PyQt" and qasync and QApplication:
             try:
                 # PyQt mode with qasync
                 app = QApplication(sys.argv)
@@ -466,7 +496,8 @@ def main_sync():
                 print(f"⚠️ PyQt GUI mode failed: {e}")
                 print("🔄 Falling back to console mode...")
                 asyncio.run(main())
-        else:
+                
+        elif GUI_TYPE == "tkinter":
             try:
                 # tkinter mode - basic asyncio
                 print("🖥️ Running tkinter GUI mode")
@@ -476,6 +507,10 @@ def main_sync():
                 print(f"⚠️ tkinter GUI mode failed: {e}")
                 print("🔄 Falling back to console mode...")
                 asyncio.run(main())
+        else:
+            # Fallback to console
+            print("📟 GUI not properly initialized, running in console mode")
+            asyncio.run(main())
     else:
         # Console mode - basic asyncio
         print("📟 Running in console mode")

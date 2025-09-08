@@ -3,6 +3,7 @@
 Graphical user interface modules for the Phoenix system
 """
 
-from .dashboard import PhoenixDashboard, PhoenixStyle
+# Don't import GUI components automatically to avoid dependency errors
+# Import them explicitly in main.py when needed
 
-__all__ = ['PhoenixDashboard', 'PhoenixStyle']
+__all__ = []
