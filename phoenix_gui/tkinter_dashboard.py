@@ -19,8 +19,9 @@ class PhoenixTkinterDashboard:
     Cross-platform GUI that works without external dependencies
     """
     
-    def __init__(self, arbitrage_engine=None, recovery_system=None, profit_harvester=None):
+    def __init__(self, pair_scanner=None, arbitrage_engine=None, recovery_system=None, profit_harvester=None):
         """Initialize tkinter dashboard"""
+        self.pair_scanner = pair_scanner
         self.arbitrage_engine = arbitrage_engine
         self.recovery_system = recovery_system
         self.profit_harvester = profit_harvester
@@ -351,17 +352,45 @@ class PhoenixTkinterDashboard:
     def _async_connect_broker(self):
         """Async wrapper for connecting to broker"""
         try:
-            import time
-            time.sleep(2)  # Simulate connection time
-            
             # Check if pair_scanner exists and try to connect
             if hasattr(self, 'pair_scanner') and self.pair_scanner:
-                # Try to initialize broker connection
                 self.log_message("📡 Initializing broker connection...")
-                # In real implementation, this would call: await self.pair_scanner.initialize()
                 
-            self.log_message("✅ Broker connected successfully")
-            self.connection_status.set("Connected")
+                # Run async broker connection in sync context
+                import asyncio
+                
+                # Create event loop for this thread if none exists
+                try:
+                    loop = asyncio.get_event_loop()
+                except RuntimeError:
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                
+                # Try to connect to broker
+                try:
+                    loop.run_until_complete(self.pair_scanner.initialize())
+                    
+                    if self.pair_scanner.is_connected:
+                        self.log_message("✅ Broker connected successfully")
+                        self.log_message(f"📊 Connected to {self.pair_scanner.api_type.value}")
+                        
+                        # Get available pairs
+                        pairs = self.pair_scanner.get_available_pairs()
+                        self.log_message(f"💱 Found {len(pairs)} currency pairs")
+                        
+                        self.connection_status.set("Connected")
+                    else:
+                        self.log_message("❌ Broker connection failed")
+                        self.connection_status.set("Disconnected")
+                        
+                except Exception as broker_error:
+                    self.log_message(f"❌ Broker connection error: {broker_error}")
+                    self.connection_status.set("Disconnected")
+                    
+            else:
+                self.log_message("❌ No broker scanner available")
+                self.connection_status.set("Disconnected")
+            
             self.connect_button.config(state='normal')
             self.disconnect_button.config(state='normal')
             
@@ -373,8 +402,28 @@ class PhoenixTkinterDashboard:
     def _async_disconnect_broker(self):
         """Async wrapper for disconnecting from broker"""
         try:
-            import time
-            time.sleep(1)  # Simulate disconnection time
+            # Check if pair_scanner exists and disconnect
+            if hasattr(self, 'pair_scanner') and self.pair_scanner:
+                self.log_message("🔌 Disconnecting from broker...")
+                
+                # Run async broker disconnection
+                import asyncio
+                try:
+                    loop = asyncio.get_event_loop()
+                except RuntimeError:
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                
+                try:
+                    # Stop pair scanner if it has a stop method
+                    if hasattr(self.pair_scanner, 'stop'):
+                        loop.run_until_complete(self.pair_scanner.stop())
+                    
+                    # Reset connection status
+                    self.pair_scanner.is_connected = False
+                    
+                except Exception as disconnect_error:
+                    self.log_message(f"⚠️ Disconnect warning: {disconnect_error}")
             
             self.log_message("✅ Broker disconnected")
             self.connection_status.set("Disconnected")
@@ -382,7 +431,7 @@ class PhoenixTkinterDashboard:
             self.disconnect_button.config(state='normal')
             
             # Also stop trading if running
-            if self.trading_status.get() == "Running":
+            if self.trading_status and self.trading_status.get() == "Running":
                 self.log_message("🛑 Stopping trading due to disconnection...")
                 self.trading_status.set("Stopped")
             
@@ -393,14 +442,37 @@ class PhoenixTkinterDashboard:
     def _async_start_trading(self):
         """Async wrapper for starting trading"""
         try:
-            import time
-            time.sleep(1)  # Simulate startup time
+            # Check if arbitrage_engine exists and start trading
+            if hasattr(self, 'arbitrage_engine') and self.arbitrage_engine:
+                self.log_message("🚀 Starting arbitrage engine...")
+                
+                # Run async trading startup
+                import asyncio
+                try:
+                    loop = asyncio.get_event_loop()
+                except RuntimeError:
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                
+                try:
+                    # Start the arbitrage engine
+                    loop.run_until_complete(self.arbitrage_engine.start())
+                    
+                    self.log_message("✅ Trading system started")
+                    self.log_message("🔍 Scanning for arbitrage opportunities...")
+                    self.trading_status.set("Running")
+                    
+                except Exception as trading_error:
+                    self.log_message(f"❌ Trading startup error: {trading_error}")
+                    self.trading_status.set("Stopped")
+                    
+            else:
+                self.log_message("❌ No arbitrage engine available")
+                self.trading_status.set("Stopped")
             
-            # This would need to be implemented based on your async architecture
-            self.log_message("✅ Trading system started")
-            self.trading_status.set("Running")
             self.start_button.config(state='normal')
             self.stop_button.config(state='normal')
+            
         except Exception as e:
             self.log_message(f"❌ Failed to start trading: {e}")
             self.trading_status.set("Stopped")
@@ -409,14 +481,34 @@ class PhoenixTkinterDashboard:
     def _async_stop_trading(self):
         """Async wrapper for stopping trading"""
         try:
-            import time
-            time.sleep(1)  # Simulate shutdown time
+            # Check if arbitrage_engine exists and stop trading
+            if hasattr(self, 'arbitrage_engine') and self.arbitrage_engine:
+                self.log_message("🛑 Stopping arbitrage engine...")
+                
+                # Run async trading shutdown
+                import asyncio
+                try:
+                    loop = asyncio.get_event_loop()
+                except RuntimeError:
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                
+                try:
+                    # Stop the arbitrage engine
+                    loop.run_until_complete(self.arbitrage_engine.stop())
+                    
+                    self.log_message("✅ Trading system stopped")
+                    
+                except Exception as trading_error:
+                    self.log_message(f"⚠️ Trading shutdown warning: {trading_error}")
+                    
+            else:
+                self.log_message("✅ Trading system stopped")
             
-            # This would need to be implemented based on your async architecture
-            self.log_message("✅ Trading system stopped")
             self.trading_status.set("Stopped")
             self.start_button.config(state='normal')
             self.stop_button.config(state='normal')
+            
         except Exception as e:
             self.log_message(f"❌ Failed to stop trading: {e}")
             self.stop_button.config(state='normal')

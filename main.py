@@ -137,6 +137,7 @@ class ArbiPhoenix:
             # 5. Initialize GUI dashboard (if available)
             if GUI_AVAILABLE and PhoenixDashboard:
                 self.dashboard = PhoenixDashboard(
+                    pair_scanner=self.pair_scanner,
                     arbitrage_engine=self.arbitrage_engine,
                     recovery_system=self.recovery_system,
                     profit_harvester=self.profit_harvester
