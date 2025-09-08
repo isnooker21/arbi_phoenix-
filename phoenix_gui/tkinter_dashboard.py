@@ -30,14 +30,15 @@ class PhoenixTkinterDashboard:
         self.is_running = False
         self.update_thread = None
         
-        # Status variables
-        self.trading_status = tk.StringVar(value="Stopped")
-        self.account_balance = tk.StringVar(value="$0.00")
-        self.total_profit = tk.StringVar(value="$0.00")
-        self.opportunities_found = tk.StringVar(value="0")
-        self.opportunities_executed = tk.StringVar(value="0")
-        self.success_rate = tk.StringVar(value="0.0%")
-        self.active_positions = tk.StringVar(value="0")
+        # Status variables (will be initialized in create_gui)
+        self.connection_status = None
+        self.trading_status = None
+        self.account_balance = None
+        self.total_profit = None
+        self.opportunities_found = None
+        self.opportunities_executed = None
+        self.success_rate = None
+        self.active_positions = None
         
     def create_gui(self):
         """Create the main GUI window"""
@@ -45,6 +46,16 @@ class PhoenixTkinterDashboard:
         self.root.title("🔥 Arbi Phoenix Dashboard")
         self.root.geometry("1000x700")
         self.root.configure(bg='#2b2b2b')
+        
+        # Initialize status variables after root window is created
+        self.connection_status = tk.StringVar(value="Disconnected")
+        self.trading_status = tk.StringVar(value="Stopped")
+        self.account_balance = tk.StringVar(value="$0.00")
+        self.total_profit = tk.StringVar(value="$0.00")
+        self.opportunities_found = tk.StringVar(value="0")
+        self.opportunities_executed = tk.StringVar(value="0")
+        self.success_rate = tk.StringVar(value="0.0%")
+        self.active_positions = tk.StringVar(value="0")
         
         # Configure style
         style = ttk.Style()
@@ -518,6 +529,11 @@ class PhoenixTkinterDashboard:
     
     def run(self):
         """Run the GUI main loop"""
+        if not self.root:
+            self.create_gui()
+            self.start_update_loop()
+            self.log_message("🔥 Dashboard started successfully")
+        
         if self.root:
             self.root.mainloop()
 
