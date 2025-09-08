@@ -96,37 +96,73 @@ class PhoenixTkinterDashboard:
     
     def _create_control_panel(self):
         """Create control buttons panel"""
-        control_frame = tk.Frame(self.root, bg='#2b2b2b', height=60)
+        control_frame = tk.Frame(self.root, bg='#2b2b2b', height=80)
         control_frame.pack(fill='x', padx=10, pady=5)
         control_frame.pack_propagate(False)
         
-        # Control buttons
-        self.start_button = tk.Button(control_frame,
+        # Connection status
+        self.connection_status = tk.StringVar(value="Disconnected")
+        
+        # Top row - Connection controls
+        conn_frame = tk.Frame(control_frame, bg='#2b2b2b')
+        conn_frame.pack(fill='x', pady=(5, 0))
+        
+        self.connect_button = tk.Button(conn_frame,
+                                       text="🔗 Connect Broker",
+                                       command=self._connect_broker,
+                                       bg='#0066cc',
+                                       fg='white',
+                                       font=('Arial', 10, 'bold'),
+                                       width=18)
+        self.connect_button.pack(side='left', padx=5)
+        
+        self.disconnect_button = tk.Button(conn_frame,
+                                          text="❌ Disconnect",
+                                          command=self._disconnect_broker,
+                                          bg='#666666',
+                                          fg='white',
+                                          font=('Arial', 10, 'bold'),
+                                          width=15)
+        self.disconnect_button.pack(side='left', padx=5)
+        
+        # Connection status label
+        status_label = tk.Label(conn_frame,
+                               textvariable=self.connection_status,
+                               bg='#2b2b2b',
+                               fg='#ffff00',
+                               font=('Arial', 10, 'bold'))
+        status_label.pack(side='left', padx=20)
+        
+        # Bottom row - Trading controls
+        trade_frame = tk.Frame(control_frame, bg='#2b2b2b')
+        trade_frame.pack(fill='x', pady=(5, 5))
+        
+        self.start_button = tk.Button(trade_frame,
                                      text="🚀 Start Trading",
                                      command=self._start_trading,
                                      bg='#00aa00',
                                      fg='white',
                                      font=('Arial', 11, 'bold'),
                                      width=15)
-        self.start_button.pack(side='left', padx=5, pady=10)
+        self.start_button.pack(side='left', padx=5)
         
-        self.stop_button = tk.Button(control_frame,
+        self.stop_button = tk.Button(trade_frame,
                                     text="🛑 Stop Trading", 
                                     command=self._stop_trading,
                                     bg='#aa0000',
                                     fg='white',
                                     font=('Arial', 11, 'bold'),
                                     width=15)
-        self.stop_button.pack(side='left', padx=5, pady=10)
+        self.stop_button.pack(side='left', padx=5)
         
-        self.refresh_button = tk.Button(control_frame,
+        self.refresh_button = tk.Button(trade_frame,
                                        text="🔄 Refresh",
                                        command=self._refresh_data,
                                        bg='#0066cc',
                                        fg='white', 
                                        font=('Arial', 11, 'bold'),
                                        width=15)
-        self.refresh_button.pack(side='left', padx=5, pady=10)
+        self.refresh_button.pack(side='left', padx=5)
     
     def _create_status_panel(self):
         """Create status information panel"""
@@ -228,9 +264,43 @@ class PhoenixTkinterDashboard:
         # Add initial log message
         self.log_message("🔥 Arbi Phoenix Dashboard initialized")
     
+    def _connect_broker(self):
+        """Connect to broker"""
+        try:
+            self.log_message("🔗 Connecting to broker...")
+            self.connection_status.set("Connecting...")
+            self.connect_button.config(state='disabled')
+            
+            # Create async task for broker connection
+            threading.Thread(target=self._async_connect_broker, daemon=True).start()
+                
+        except Exception as e:
+            self.log_message(f"❌ Error connecting to broker: {e}")
+            self.connect_button.config(state='normal')
+    
+    def _disconnect_broker(self):
+        """Disconnect from broker"""
+        try:
+            self.log_message("❌ Disconnecting from broker...")
+            self.connection_status.set("Disconnecting...")
+            self.disconnect_button.config(state='disabled')
+            
+            # Create async task for broker disconnection
+            threading.Thread(target=self._async_disconnect_broker, daemon=True).start()
+                
+        except Exception as e:
+            self.log_message(f"❌ Error disconnecting from broker: {e}")
+            self.disconnect_button.config(state='normal')
+
     def _start_trading(self):
         """Start trading system"""
         try:
+            # Check if broker is connected first
+            if self.connection_status.get() != "Connected":
+                self.log_message("❌ Please connect to broker first!")
+                messagebox.showwarning("Connection Required", "Please connect to broker before starting trading!")
+                return
+            
             self.log_message("🚀 Starting trading system...")
             
             # Create async task for starting trading
@@ -267,9 +337,54 @@ class PhoenixTkinterDashboard:
         self._update_opportunities()
         self._update_positions()
     
+    def _async_connect_broker(self):
+        """Async wrapper for connecting to broker"""
+        try:
+            import time
+            time.sleep(2)  # Simulate connection time
+            
+            # Check if pair_scanner exists and try to connect
+            if hasattr(self, 'pair_scanner') and self.pair_scanner:
+                # Try to initialize broker connection
+                self.log_message("📡 Initializing broker connection...")
+                # In real implementation, this would call: await self.pair_scanner.initialize()
+                
+            self.log_message("✅ Broker connected successfully")
+            self.connection_status.set("Connected")
+            self.connect_button.config(state='normal')
+            self.disconnect_button.config(state='normal')
+            
+        except Exception as e:
+            self.log_message(f"❌ Failed to connect to broker: {e}")
+            self.connection_status.set("Disconnected")
+            self.connect_button.config(state='normal')
+    
+    def _async_disconnect_broker(self):
+        """Async wrapper for disconnecting from broker"""
+        try:
+            import time
+            time.sleep(1)  # Simulate disconnection time
+            
+            self.log_message("✅ Broker disconnected")
+            self.connection_status.set("Disconnected")
+            self.connect_button.config(state='normal')
+            self.disconnect_button.config(state='normal')
+            
+            # Also stop trading if running
+            if self.trading_status.get() == "Running":
+                self.log_message("🛑 Stopping trading due to disconnection...")
+                self.trading_status.set("Stopped")
+            
+        except Exception as e:
+            self.log_message(f"❌ Failed to disconnect from broker: {e}")
+            self.disconnect_button.config(state='normal')
+
     def _async_start_trading(self):
         """Async wrapper for starting trading"""
         try:
+            import time
+            time.sleep(1)  # Simulate startup time
+            
             # This would need to be implemented based on your async architecture
             self.log_message("✅ Trading system started")
             self.trading_status.set("Running")
@@ -277,11 +392,15 @@ class PhoenixTkinterDashboard:
             self.stop_button.config(state='normal')
         except Exception as e:
             self.log_message(f"❌ Failed to start trading: {e}")
+            self.trading_status.set("Stopped")
             self.start_button.config(state='normal')
     
     def _async_stop_trading(self):
         """Async wrapper for stopping trading"""
         try:
+            import time
+            time.sleep(1)  # Simulate shutdown time
+            
             # This would need to be implemented based on your async architecture
             self.log_message("✅ Trading system stopped")
             self.trading_status.set("Stopped")

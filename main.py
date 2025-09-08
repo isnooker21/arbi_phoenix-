@@ -15,21 +15,29 @@ import threading
 
 # Try to import GUI components, fall back to console mode if failed
 GUI_AVAILABLE = True
+QApplication = None
+QTimer = None
+qasync = None
+
 try:
     from PyQt6.QtWidgets import QApplication
     from PyQt6.QtCore import QTimer
     import qasync
+    print("✅ PyQt6 available")
 except ImportError:
     try:
         from PyQt5.QtWidgets import QApplication
         from PyQt5.QtCore import QTimer
         import qasync
+        print("✅ PyQt5 available")
     except ImportError:
-        GUI_AVAILABLE = False
-        print("⚠️ GUI libraries not available, running in console mode")
-        QApplication = None
-        QTimer = None
-        qasync = None
+        try:
+            import tkinter as tk
+            print("✅ tkinter available")
+            GUI_AVAILABLE = True
+        except ImportError:
+            GUI_AVAILABLE = False
+            print("⚠️ No GUI libraries available, running in console mode")
 
 # Add project root to Python path
 project_root = Path(__file__).parent
@@ -42,15 +50,26 @@ from phoenix_brokers.pair_scanner import BrokerPairScanner
 # Try to import GUI dashboard, fall back if not available
 PhoenixDashboard = None
 if GUI_AVAILABLE:
-    try:
-        from phoenix_gui.dashboard import PhoenixDashboard
-    except ImportError:
-        print("⚠️ PyQt GUI dashboard not available, trying tkinter...")
+    if QApplication and qasync:
+        # Try PyQt first
+        try:
+            from phoenix_gui.dashboard import PhoenixDashboard
+            print("✅ Using PyQt dashboard")
+        except ImportError:
+            print("⚠️ PyQt GUI dashboard not available, trying tkinter...")
+            try:
+                from phoenix_gui.tkinter_dashboard import PhoenixTkinterDashboard as PhoenixDashboard
+                print("✅ Using tkinter dashboard")
+            except ImportError:
+                print("⚠️ No GUI dashboard available")
+                GUI_AVAILABLE = False
+    else:
+        # Try tkinter
         try:
             from phoenix_gui.tkinter_dashboard import PhoenixTkinterDashboard as PhoenixDashboard
             print("✅ Using tkinter dashboard")
         except ImportError:
-            print("⚠️ No GUI dashboard available")
+            print("⚠️ tkinter GUI dashboard not available")
             GUI_AVAILABLE = False
 from phoenix_utils.logger import setup_logger
 from phoenix_utils.config_manager import ConfigManager
